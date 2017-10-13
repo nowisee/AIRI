@@ -1,0 +1,170 @@
+
+# coding: utf-8
+
+# In[1]:
+
+
+import tensorflow as tf
+import numpy as np
+import scipy.misc
+import sys
+
+import matplotlib.pyplot as plt
+#get_ipython().magic(u'matplotlib inline')
+
+
+# In[6]:
+
+
+##
+imageNum = 60000
+testImageNum = 10000
+typesOfNumber = 10
+
+row = 28
+col = 28
+
+batchSize = 256
+batchCount = imageNum // batchSize
+
+hidden1NodeNum = 500
+hidden2NodeNum = 500
+hidden3NodeNum = 500
+
+dropoutRate = 0.7
+
+learningRate = 0.005
+iteration = 400
+
+##
+X = tf.placeholder(shape=[None, row*col], dtype=tf.float32, name='X')
+Y = tf.placeholder(shape=[None], dtype=tf.int64, name='Y')
+Y_onehot = tf.one_hot(Y, typesOfNumber, axis=1)
+
+TRAIN = tf.placeholder(shape=None, dtype=tf.bool, name='TRAIN')
+
+W1 = tf.Variable(tf.truncated_normal([row*col, hidden1NodeNum], stddev=0.02, name='weights1'))
+B1 = tf.Variable(tf.zeros([hidden1NodeNum]), name='biases1')
+hidden1 = tf.matmul(X, W1) + B1
+hidden1 = tf.nn.relu(hidden1, "relu1")
+hidden1 = tf.layers.dropout(hidden1, dropoutRate, TRAIN, "dropout1")
+
+W2 = tf.Variable(tf.truncated_normal([hidden1NodeNum, hidden2NodeNum], stddev=0.02, name='weights2'))
+B2 = tf.Variable(tf.zeros([hidden2NodeNum]), name='biases2')
+hidden2 = tf.matmul(hidden1, W2) + B2
+hidden2 = tf.nn.relu(hidden2, "relu2")
+hidden2 = tf.layers.dropout(hidden2, dropoutRate, TRAIN, "dropout2")
+
+#W3 = tf.Variable(tf.zeros([hidden2NodeNum, typesOfNumber], name='weights3'))
+#B3 = tf.Variable(tf.zeros([typesOfNumber]), name='biases3')
+#Y_pred = tf.matmul(hidden2, W3) + B3
+#Y_pred = tf.layers.dropout(Y_pred, dropoutRate, TRAIN, "dropout3")
+#Y_pred_softmax = tf.nn.softmax(Y_pred)
+
+W3 = tf.Variable(tf.truncated_normal([hidden2NodeNum, hidden3NodeNum], stddev=0.02, name='weights3'))
+B3 = tf.Variable(tf.zeros([hidden3NodeNum]), name='biases3')
+hidden3 = tf.matmul(hidden2, W3) + B3
+hidden3 = tf.nn.relu(hidden3, "relu3")
+hidden3 = tf.layers.dropout(hidden3, dropoutRate, TRAIN, "dropout3")
+
+W4 = tf.Variable(tf.zeros([hidden3NodeNum, typesOfNumber], name='weights4'))
+B4 = tf.Variable(tf.zeros([typesOfNumber]), name='biases4')
+Y_pred = tf.matmul(hidden3, W4) + B4
+Y_pred = tf.layers.dropout(Y_pred, dropoutRate, TRAIN, "dropout4")
+Y_pred_softmax = tf.nn.softmax(Y_pred)
+
+with tf.name_scope("Reduce_mean_with_softmax_cross_entropy_with_logits"):
+    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=Y_pred, labels=Y_onehot))
+
+##
+trainer = tf.train.GradientDescentOptimizer(learningRate)
+optimizer = trainer.minimize(loss)
+
+correct = tf.equal(tf.argmax(Y_pred_softmax, 1), tf.argmax(Y_onehot, 1))
+acc = tf.reduce_mean(tf.cast(correct, tf.float32))    
+
+saver = tf.train.Saver()
+path = './models/simple_nn'
+
+
+# In[ ]:
+
+
+if sys.argv[1] == 'train':
+    ##
+    fileobj = open('train-images.idx3-ubyte')
+    images = np.fromfile(file=fileobj, dtype=np.uint8)
+    images = images[16:].reshape([imageNum, row*col]).astype(np.float)
+
+    fileobj = open('train-labels.idx1-ubyte')
+    labels = np.fromfile(file=fileobj, dtype=np.uint8)
+    labels = labels[8:].reshape([imageNum]).astype(np.int)
+    
+    ##
+    images = images / 255.0
+    
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+
+        for epoch in range(iteration):
+            total_loss = 0  
+	    tf.summary.FileWriter('./graphs', sess.graph)
+
+            for i in range(batchCount):
+                batchIndex = i * batchSize
+                img = np.reshape(images[batchIndex:batchIndex+batchSize], [batchSize, row*col])
+                label = labels[batchIndex:batchIndex+batchSize]
+                _, loss_v = sess.run([optimizer, loss], feed_dict={X:img, Y:label, TRAIN:True})
+                total_loss += loss_v
+
+            saver.save(sess, path)
+            print 'epoch_%04d: %.6f' %(epoch+1, total_loss), ', acc = ', acc.eval(session=sess, feed_dict={X:images, Y:labels})
+            
+        #print'Test image acc = ', acc.eval(session=sess, feed_dict={X:test_images, Y:test_labels})
+
+        #trained_W1, trained_W2, trained_W3 = sess.run([W1, W2, W3])
+    
+    ## Weight Value Visualization
+#     trained_weight = np.transpose(trained_weight)
+#     weight = (trained_weight).reshape([typesOfNumber, row, col]).astype(np.float32)
+
+#     for i in range(typesOfNumber):
+#         maxVal = np.max(weight[i])
+#         minVal = np.min(weight[i])
+#         weight[i] = 255 * (weight[i] - minVal) / (maxVal-minVal)
+#         name = 'weight' + str(i) + '.jpg'
+#         scipy.misc.imsave(name, weight[i])
+
+
+# In[ ]:
+
+
+if sys.argv[1] == 'test':
+    if sys.argv[2] == 'MNIST_data':
+        fileobj = open('t10k-images.idx3-ubyte')
+        test_images = np.fromfile(file=fileobj, dtype=np.uint8)
+        test_images = test_images[16:].reshape([testImageNum, row*col]).astype(np.float)
+
+        fileobj = open('t10k-labels.idx1-ubyte')
+        test_labels = np.fromfile(file=fileobj, dtype=np.uint8)
+        test_labels = test_labels[8:].reshape([testImageNum]).astype(np.int)
+        
+        test_images = test_images / 255.0
+
+        with tf.Session() as sess:
+            saver.restore(sess, path)
+            print'Test image acc = ', acc.eval(session=sess, feed_dict={X:test_images, Y:test_labels, TRAIN:False})
+        
+    else:
+        test_image = scipy.misc.imread(sys.argv[2])
+        test_image = test_image.reshape([1, row*col])
+        test_image = test_image / 255.0
+        with tf.Session() as sess:
+            saver.restore(sess, path)
+            np_Y_pred_softmax = sess.run(Y_pred_softmax, feed_dict={X:test_image, TRAIN:False})
+            
+            for i in range(typesOfNumber):
+                if np_Y_pred_softmax[0][i] == np_Y_pred_softmax.max():
+                    print i
+    
+
